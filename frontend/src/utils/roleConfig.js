@@ -11,7 +11,6 @@ import {
   Users,
   Droplets,
   Building2,
-  ShieldCheck,
 } from 'lucide-react';
 
 export const roleLabels = {
@@ -71,11 +70,10 @@ export const sidebarMenus = {
   ],
 
   admin: [
-    { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
+    { label: 'Dashboard', icon: LayoutDashboard, path: '/admin-dashboard' },
     { label: 'Users', icon: Users, path: '/users' },
     { label: 'Donors', icon: Droplets, path: '/donors' },
     { label: 'Hospitals', icon: Building2, path: '/hospitals' },
-    { label: 'Verifications', icon: ShieldCheck, path: '/verifications' },
   ],
 };
 

@@ -7,14 +7,14 @@ import {
   useRef,
   useState,
 } from 'react';
-import toast from 'react-hot-toast';
 import { useAuth } from './AuthContext';
 import { connectSocket, disconnectSocket } from '../services/socket';
+import { showInfo, showRequestResponse, showSuccess } from '../utils/toast';
 
 const SocketContext = createContext(null);
 
 const createNotification = (type, data) => ({
-  id: `${type}-${data.requestId || data.request?._id}-${Date.now()}`,
+  id: `${type}-${data.requestId || data.request?._id || data.action}-${Date.now()}`,
   type,
   read: false,
   createdAt: new Date().toISOString(),
@@ -25,7 +25,21 @@ const createNotification = (type, data) => ({
   message: data.message,
   emergency: data.emergency,
   request: data.request,
+  action: data.action,
 });
+
+const adminActionLabels = {
+  user_blocked: 'User blocked',
+  user_unblocked: 'User unblocked',
+  user_deleted: 'User removed',
+  donor_deleted: 'Donor removed',
+  hospital_verified: 'Hospital verified',
+  hospital_unverified: 'Hospital unverified',
+  hospital_blocked: 'Hospital blocked',
+  hospital_unblocked: 'Hospital unblocked',
+  request_created: 'New blood request',
+  request_status_changed: 'Request status updated',
+};
 
 export const SocketProvider = ({ children }) => {
   const { user, isAuthenticated, loading } = useAuth();
@@ -34,6 +48,7 @@ export const SocketProvider = ({ children }) => {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const requestListenersRef = useRef(new Set());
+  const adminStatsListenersRef = useRef(new Set());
 
   const addNotification = useCallback((notification) => {
     setNotifications((prev) => [notification, ...prev].slice(0, 50));
@@ -45,12 +60,27 @@ export const SocketProvider = ({ children }) => {
     return () => requestListenersRef.current.delete(handler);
   }, []);
 
+  const subscribeToAdminStats = useCallback((handler) => {
+    adminStatsListenersRef.current.add(handler);
+    return () => adminStatsListenersRef.current.delete(handler);
+  }, []);
+
   const notifyRequestListeners = useCallback((event) => {
     requestListenersRef.current.forEach((handler) => {
       try {
         handler(event);
       } catch (err) {
         console.error('Request listener error:', err);
+      }
+    });
+  }, []);
+
+  const notifyAdminStatsListeners = useCallback((event) => {
+    adminStatsListenersRef.current.forEach((handler) => {
+      try {
+        handler(event);
+      } catch (err) {
+        console.error('Admin stats listener error:', err);
       }
     });
   }, []);
@@ -77,6 +107,19 @@ export const SocketProvider = ({ children }) => {
     setUnreadCount(0);
   }, []);
 
+  const handleRequestResponse = useCallback(
+    (data, sourceEvent) => {
+      const notification = createNotification(sourceEvent, data);
+      addNotification(notification);
+      notifyRequestListeners({ type: sourceEvent, ...data });
+
+      if (user?.role === 'user' || user?.role === 'hospital') {
+        showRequestResponse(data.status, data.donorName);
+      }
+    },
+    [user?.role, addNotification, notifyRequestListeners]
+  );
+
   useEffect(() => {
     if (loading || !isAuthenticated || !user) {
       disconnectSocket();
@@ -97,29 +140,26 @@ export const SocketProvider = ({ children }) => {
       notifyRequestListeners({ type: 'new_request', ...data });
 
       if (user.role === 'donor') {
-        toast.success(
-          `New blood request from ${data.requesterName} (${data.bloodGroup})`,
-          { duration: 5000 }
+        showSuccess(
+          `New request from ${data.requesterName} (${data.bloodGroup})`
         );
       }
     };
 
-    const onRequestUpdated = (data) => {
-      const notification = createNotification('request_updated', data);
-      addNotification(notification);
-      notifyRequestListeners({ type: 'request_updated', ...data });
+    const onRequestResponse = (data) => {
+      handleRequestResponse(data, 'request_response');
+    };
 
-      if (user.role === 'user' || user.role === 'hospital') {
-        const label = data.status === 'accepted' ? 'accepted' : 'rejected';
-        toast(
-          data.status === 'accepted'
-            ? `Your request was accepted!`
-            : `Your request was ${label}.`,
-          {
-            icon: data.status === 'accepted' ? '✅' : 'ℹ️',
-            duration: 5000,
-          }
-        );
+    const onAdminUpdate = (data) => {
+      const notification = createNotification('admin_update', data);
+      addNotification(notification);
+      notifyAdminStatsListeners({ type: 'admin_update', ...data });
+
+      if (user.role === 'admin') {
+        const label = adminActionLabels[data.action] || 'Platform update';
+        showInfo(label);
+      } else if (data.action?.includes('block') && data.targetUserId === user._id) {
+        showInfo('Your account status was updated by an administrator');
       }
     };
 
@@ -130,7 +170,8 @@ export const SocketProvider = ({ children }) => {
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
     socket.on('new_request', onNewRequest);
-    socket.on('request_updated', onRequestUpdated);
+    socket.on('request_response', onRequestResponse);
+    socket.on('admin_update', onAdminUpdate);
     socket.on('user_online_status', onOnlineStatus);
 
     if (socket.connected) {
@@ -141,7 +182,8 @@ export const SocketProvider = ({ children }) => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.off('new_request', onNewRequest);
-      socket.off('request_updated', onRequestUpdated);
+      socket.off('request_response', onRequestResponse);
+      socket.off('admin_update', onAdminUpdate);
       socket.off('user_online_status', onOnlineStatus);
       disconnectSocket();
       setConnected(false);
@@ -152,6 +194,8 @@ export const SocketProvider = ({ children }) => {
     loading,
     addNotification,
     notifyRequestListeners,
+    notifyAdminStatsListeners,
+    handleRequestResponse,
   ]);
 
   const value = useMemo(
@@ -161,6 +205,7 @@ export const SocketProvider = ({ children }) => {
       notifications,
       unreadCount,
       subscribeToRequests,
+      subscribeToAdminStats,
       markAllRead,
       markAsRead,
       clearNotifications,
@@ -171,6 +216,7 @@ export const SocketProvider = ({ children }) => {
       notifications,
       unreadCount,
       subscribeToRequests,
+      subscribeToAdminStats,
       markAllRead,
       markAsRead,
       clearNotifications,

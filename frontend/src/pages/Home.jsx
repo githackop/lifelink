@@ -2,7 +2,7 @@ import { useAuth } from '../context/AuthContext';
 import UserDashboard from './UserDashboard';
 import DonorDashboard from './DonorDashboard';
 import HospitalDashboard from './HospitalDashboard';
-import AdminDashboard from './AdminDashboard';
+import AdminDashboard from './admin/AdminDashboard';
 
 const dashboards = {
   user: UserDashboard,

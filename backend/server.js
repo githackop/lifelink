@@ -9,6 +9,7 @@ import donorRoutes from './routes/donorRoutes.js';
 import donorsRoutes from './routes/donorsRoutes.js';
 import requestRoutes from './routes/requestRoutes.js';
 import hospitalDonorRoutes from './routes/hospitalDonorRoutes.js';
+import adminRoutes from './routes/adminRoutes.js';
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
 import { initSocket } from './sockets/socketManager.js';
 
@@ -43,6 +44,7 @@ app.use('/api/donor', donorRoutes);
 app.use('/api/donors', donorsRoutes);
 app.use('/api/requests', requestRoutes);
 app.use('/api/hospital-donors', hospitalDonorRoutes);
+app.use('/api/admin', adminRoutes);
 app.use(notFound);
 app.use(errorHandler);
 

@@ -1,0 +1,63 @@
+# =====================
+# Node / NPM
+# =====================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+__pycache__
+
+venv/
+outputfolder
+# Videos
+videos/
+
+# =====================
+# Environment files
+# =====================
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+
+# =====================
+# Backend specific
+# =====================
+backend/.env
+backend/.env
+backend/config/*.local.js
+backend/scripts/testValidation.js
+
+# =====================
+# Frontend (Vite / React)
+# =====================
+frontend/.env
+frontend/dist
+frontend/build
+frontend/.vite
+
+# =====================
+# OS / Editor
+# =====================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# =====================
+# Logs
+# =====================
+logs/
+*.log
+
+# =====================
+# Misc
+# =====================
+coverage/
+.cache/
+
+*/.agents
+
