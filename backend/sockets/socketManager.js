@@ -19,6 +19,19 @@ const broadcastOnlineUsers = () => {
   io.emit('user_online_status', list);
 };
 
+const logEmit = (event, target, payload) => {
+  console.log('SOCKET EVENT EMITTED:', event, { target, payload });
+};
+
+const emitToRoom = (room, event, payload) => {
+  if (!io) {
+    console.warn('Socket.io not initialized — skipped emit:', event);
+    return;
+  }
+  logEmit(event, room, payload);
+  io.to(room).emit(event, payload);
+};
+
 export const initSocket = (httpServer) => {
   io = new Server(httpServer, {
     cors: {
@@ -47,7 +60,7 @@ export const initSocket = (httpServer) => {
       socket.userName = user.name;
 
       next();
-    } catch (error) {
+    } catch {
       next(new Error('Invalid or expired token'));
     }
   });
@@ -85,31 +98,85 @@ export const initSocket = (httpServer) => {
 export const getIO = () => io;
 
 export const emitToUser = (userId, event, payload) => {
-  if (!io || !userId) return;
-  io.to(`user:${userId.toString()}`).emit(event, payload);
+  if (!userId) return;
+  emitToRoom(`user:${userId.toString()}`, event, payload);
 };
 
 export const emitToAdmins = (event, payload) => {
-  if (!io) return;
-  io.to('role:admin').emit(event, payload);
+  emitToRoom('role:admin', event, payload);
 };
 
+/** Blood request created — notify donor only */
 export const emitNewRequest = (donorId, payload) => {
-  emitToUser(donorId, 'new_request', payload);
+  const body = {
+    requestId: payload.requestId?.toString(),
+    requesterId: payload.requesterId?.toString(),
+    requesterName: payload.requesterName,
+    donorId: payload.donorId?.toString(),
+    bloodGroup: payload.bloodGroup,
+    message: payload.message ?? null,
+    emergency: Boolean(payload.emergency),
+    createdAt: payload.createdAt || new Date().toISOString(),
+    request: payload.request,
+  };
+
+  emitToUser(donorId, 'new_request', body);
 };
 
-/** Donor accepted/rejected — notify requester */
+/** Donor accepted/rejected — notify requester (user/hospital) only */
 export const emitRequestResponse = (requesterId, payload) => {
-  emitToUser(requesterId, 'request_response', payload);
-  emitToUser(requesterId, 'request_updated', payload);
+  const body = {
+    requestId: payload.requestId?.toString(),
+    donorId: payload.donorId?.toString(),
+    donorName: payload.donorName,
+    requesterId: payload.requesterId?.toString(),
+    status: payload.status,
+    bloodGroup: payload.bloodGroup,
+    createdAt: payload.createdAt || new Date().toISOString(),
+    request: payload.request,
+  };
+
+  emitToUser(requesterId, 'request_response', body);
+
+  // UI list refresh only (no duplicate notification on frontend)
+  emitToUser(requesterId, 'request_updated', { ...body, request: payload.request });
 };
 
-/** @deprecated Use emitRequestResponse — kept for internal compatibility */
+/** @deprecated alias */
 export const emitRequestUpdated = emitRequestResponse;
 
+const ADMIN_MESSAGES = {
+  user_blocked: 'A user account was blocked',
+  user_unblocked: 'A user account was unblocked',
+  user_deleted: 'A user account was removed',
+  donor_deleted: 'A donor account was removed',
+  hospital_verified: 'A hospital was verified',
+  hospital_unverified: 'Hospital verification was removed',
+  hospital_blocked: 'A hospital was blocked',
+  hospital_unblocked: 'A hospital was unblocked',
+  request_created: 'A new blood request was created',
+  request_status_changed: 'A blood request status was updated',
+};
+
+/** Platform admin actions — admins only */
 export const emitAdminUpdate = (payload) => {
-  emitToAdmins('admin_update', payload);
-  if (payload?.targetUserId) {
-    emitToUser(payload.targetUserId, 'admin_update', payload);
-  }
+  const body = {
+    action: payload.action,
+    targetUserId: payload.targetUserId?.toString() || null,
+    message: payload.message || ADMIN_MESSAGES[payload.action] || 'Platform update',
+    createdAt: payload.createdAt || payload.timestamp || new Date().toISOString(),
+    user: payload.user,
+    request: payload.request,
+  };
+
+  emitToAdmins('admin_update', body);
+};
+
+/** Account status change for affected user (not shown in admin feed) */
+export const emitAccountUpdate = (userId, payload) => {
+  emitToUser(userId, 'account_update', {
+    action: payload.action,
+    message: payload.message || 'Your account was updated by an administrator',
+    createdAt: payload.createdAt || new Date().toISOString(),
+  });
 };

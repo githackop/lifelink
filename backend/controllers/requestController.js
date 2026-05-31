@@ -4,7 +4,7 @@ import HospitalDonor from '../models/HospitalDonor.js';
 import { BLOOD_GROUPS } from '../models/User.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import AppError from '../utils/AppError.js';
-import { emitNewRequest, emitRequestResponse, emitToAdmins } from '../sockets/socketManager.js';
+import { emitNewRequest, emitRequestResponse, emitAdminUpdate } from '../sockets/socketManager.js';
 
 const requesterFields = 'name email role phoneNumber hospitalName city';
 const donorFields = 'name email bloodGroup city availability phoneNumber';
@@ -89,19 +89,20 @@ export const createRequest = asyncHandler(async (req, res) => {
 
   emitNewRequest(donor._id, {
     requestId: formatted._id,
+    requesterId: req.user._id,
     requesterName: formatted.requester?.hospitalName || formatted.requester?.name,
+    donorId: donor._id,
     bloodGroup: formatted.bloodGroup,
     message: formatted.message,
     emergency: formatted.emergency,
-    hospitalName: formatted.hospitalName,
-    requester: formatted.requester,
+    createdAt: formatted.createdAt,
     request: formatted,
   });
 
-  emitToAdmins('admin_update', {
+  emitAdminUpdate({
     action: 'request_created',
     request: formatted,
-    timestamp: new Date().toISOString(),
+    createdAt: formatted.createdAt,
   });
 
   res.status(201).json({
@@ -239,16 +240,19 @@ export const updateRequestStatus = asyncHandler(async (req, res) => {
 
   emitRequestResponse(bloodRequest.requesterId.toString(), {
     requestId: formatted._id,
-    status: formatted.status,
-    request: formatted,
+    donorId: formatted.donor?._id || bloodRequest.donorId,
     donorName: formatted.donor?.name,
+    requesterId: bloodRequest.requesterId,
+    status: formatted.status,
     bloodGroup: formatted.bloodGroup,
+    createdAt: formatted.updatedAt || formatted.createdAt,
+    request: formatted,
   });
 
-  emitToAdmins('admin_update', {
+  emitAdminUpdate({
     action: 'request_status_changed',
     request: formatted,
-    timestamp: new Date().toISOString(),
+    createdAt: formatted.updatedAt || formatted.createdAt,
   });
 
   res.status(200).json({
