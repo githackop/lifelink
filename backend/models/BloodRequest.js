@@ -1,0 +1,72 @@
+import mongoose from 'mongoose';
+import { BLOOD_GROUPS } from './User.js';
+
+const bloodRequestSchema = new mongoose.Schema(
+  {
+    requesterId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+
+    donorId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+
+    bloodGroup: {
+      type: String,
+      required: [true, 'Blood group is required'],
+      enum: {
+        values: BLOOD_GROUPS,
+        message: 'Invalid blood group',
+      },
+    },
+
+    message: {
+      type: String,
+      trim: true,
+      maxlength: [500, 'Message cannot exceed 500 characters'],
+    },
+
+    status: {
+      type: String,
+      enum: ['pending', 'accepted', 'rejected'],
+      default: 'pending',
+    },
+
+    // NEW: Phase 1 completion tracking
+    completed: {
+      type: Boolean,
+      default: false,
+    },
+
+    completedAt: {
+      type: Date,
+    },
+
+    emergency: {
+      type: Boolean,
+      default: false,
+    },
+
+    hospitalName: {
+      type: String,
+      trim: true,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+// Indexes (unchanged)
+bloodRequestSchema.index({ requesterId: 1, donorId: 1, status: 1 });
+bloodRequestSchema.index({ donorId: 1, status: 1 });
+bloodRequestSchema.index({ requesterId: 1, createdAt: -1 });
+bloodRequestSchema.index({ requesterId: 1, emergency: 1 });
+
+const BloodRequest = mongoose.model('BloodRequest', bloodRequestSchema);
+
+export default BloodRequest;
