@@ -9,6 +9,7 @@ import {
   Inbox,
   Wifi,
   WifiOff,
+  Shield,
 } from 'lucide-react';
 import { useSocket } from '../../context/SocketContext';
 import { useAuth } from '../../context/AuthContext';
@@ -21,7 +22,33 @@ const formatTime = (iso) => {
 
   if (diffMins < 1) return 'Just now';
   if (diffMins < 60) return `${diffMins}m ago`;
-  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
+const NotificationIcon = ({ item }) => {
+  if (item.type === 'new_request') {
+    return <Droplets className="w-4 h-4" />;
+  }
+  if (item.type === 'admin_update') {
+    return <Shield className="w-4 h-4" />;
+  }
+  if (item.status === 'accepted') {
+    return <CheckCircle2 className="w-4 h-4" />;
+  }
+  return <XCircle className="w-4 h-4" />;
+};
+
+const iconClassFor = (item) => {
+  if (item.type === 'new_request') return 'bg-rose-100 text-rose-600';
+  if (item.type === 'admin_update') return 'bg-violet-100 text-violet-600';
+  if (item.status === 'accepted') return 'bg-emerald-100 text-emerald-600';
+  if (item.status === 'rejected') return 'bg-red-100 text-red-600';
+  return 'bg-amber-100 text-amber-600';
 };
 
 const NotificationBell = () => {
@@ -38,8 +65,13 @@ const NotificationBell = () => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
-  const requestsPath =
-    user?.role === 'donor' ? '/requests-received' : '/my-requests';
+  const isAdmin = user?.role === 'admin';
+  const footerPath = isAdmin
+    ? '/admin-dashboard'
+    : user?.role === 'donor'
+      ? '/requests-received'
+      : '/my-requests';
+  const footerLabel = isAdmin ? 'Open admin dashboard' : 'View all requests';
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -51,24 +83,29 @@ const NotificationBell = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleOpen = () => {
-    setOpen((prev) => {
-      if (!prev) markAllRead();
-      return !prev;
-    });
+  useEffect(() => {
+    if (open) {
+      markAllRead();
+    }
+  }, [open, markAllRead]);
+
+  const handleToggle = () => {
+    setOpen((prev) => !prev);
   };
 
   return (
     <div className="relative" ref={ref}>
       <button
         type="button"
-        onClick={handleOpen}
+        onClick={handleToggle}
         className="relative p-2.5 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors"
         aria-label="Notifications"
+        aria-expanded={open}
       >
         <Bell className="w-5 h-5" />
         {unreadCount > 0 && (
           <motion.span
+            key={unreadCount}
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-rose-500 text-white text-[10px] font-bold ring-2 ring-white"
@@ -116,7 +153,9 @@ const NotificationBell = () => {
                   <Inbox className="w-10 h-10 text-slate-300 mx-auto mb-2" />
                   <p className="text-sm font-medium text-slate-600">No notifications yet</p>
                   <p className="text-xs text-slate-400 mt-1">
-                    Real-time alerts appear here when requests are sent or updated.
+                    {isAdmin
+                      ? 'Platform alerts appear here when users or requests change.'
+                      : 'Real-time alerts appear when requests are sent or updated.'}
                   </p>
                 </div>
               ) : (
@@ -131,27 +170,19 @@ const NotificationBell = () => {
                       >
                         <div className="flex gap-3">
                           <div
-                            className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center
-                              ${item.type === 'new_request' ? 'bg-rose-100 text-rose-600' : item.status === 'accepted' ? 'bg-emerald-100 text-emerald-600' : 'bg-amber-100 text-amber-600'}`}
+                            className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${iconClassFor(item)}`}
                           >
-                            {item.type === 'new_request' ? (
-                              <Droplets className="w-4 h-4" />
-                            ) : item.status === 'accepted' ? (
-                              <CheckCircle2 className="w-4 h-4" />
-                            ) : (
-                              <XCircle className="w-4 h-4" />
-                            )}
+                            <NotificationIcon item={item} />
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-slate-900 leading-snug">
-                              {item.type === 'new_request'
-                                ? `New request from ${item.requesterName}`
-                                : `Request ${item.status}`}
+                              {item.title}
                             </p>
-                            <p className="text-xs text-slate-500 mt-0.5 truncate">
-                              {item.bloodGroup && `Blood group: ${item.bloodGroup}`}
-                              {item.message && ` · ${item.message}`}
-                            </p>
+                            {item.body ? (
+                              <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">
+                                {item.body}
+                              </p>
+                            ) : null}
                             <p className="text-[10px] text-slate-400 mt-1">
                               {formatTime(item.createdAt)}
                             </p>
@@ -166,11 +197,11 @@ const NotificationBell = () => {
 
             <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50/50">
               <Link
-                to={requestsPath}
+                to={footerPath}
                 onClick={() => setOpen(false)}
                 className="block text-center text-xs font-semibold text-brand-600 hover:text-brand-500 py-1"
               >
-                View all requests →
+                {footerLabel} →
               </Link>
             </div>
           </motion.div>

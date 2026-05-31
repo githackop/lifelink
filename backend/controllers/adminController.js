@@ -3,7 +3,7 @@ import User, { BLOOD_GROUPS, ROLES } from '../models/User.js';
 import BloodRequest from '../models/BloodRequest.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import AppError from '../utils/AppError.js';
-import { emitAdminUpdate } from '../sockets/socketManager.js';
+import { emitAdminUpdate, emitAccountUpdate } from '../sockets/socketManager.js';
 
 const requesterFields = 'name email role hospitalName';
 const donorFields = 'name bloodGroup';
@@ -24,12 +24,22 @@ const formatAdminUser = (user) => {
   };
 };
 
-const notifyAdminChange = (action, targetUser) => {
+const notifyAdminChange = (action, targetUser, extra = {}) => {
   emitAdminUpdate({
     action,
     targetUserId: targetUser?._id?.toString(),
     user: targetUser ? formatAdminUser(targetUser) : undefined,
-    timestamp: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    ...extra,
+  });
+};
+
+const notifyAccountChange = (action, targetUser, message) => {
+  if (!targetUser?._id) return;
+  emitAccountUpdate(targetUser._id.toString(), {
+    action,
+    message,
+    createdAt: new Date().toISOString(),
   });
 };
 
@@ -152,7 +162,7 @@ export const deleteUser = asyncHandler(async (req, res) => {
     action: 'user_deleted',
     targetUserId: req.params.id,
     user: snapshot,
-    timestamp: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
   });
 
   res.status(200).json({
@@ -187,6 +197,13 @@ export const toggleUserBlock = asyncHandler(async (req, res) => {
   await user.save();
 
   notifyAdminChange(user.isBlocked ? 'user_blocked' : 'user_unblocked', user);
+  notifyAccountChange(
+    user.isBlocked ? 'user_blocked' : 'user_unblocked',
+    user,
+    user.isBlocked
+      ? 'Your account has been blocked by an administrator'
+      : 'Your account has been unblocked'
+  );
 
   res.status(200).json({
     success: true,
@@ -232,7 +249,7 @@ export const deleteDonor = asyncHandler(async (req, res) => {
     action: 'donor_deleted',
     targetUserId: req.params.id,
     user: snapshot,
-    timestamp: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
   });
 
   res.status(200).json({
@@ -302,6 +319,13 @@ export const toggleHospitalBlock = asyncHandler(async (req, res) => {
   await hospital.save();
 
   notifyAdminChange(hospital.isBlocked ? 'hospital_blocked' : 'hospital_unblocked', hospital);
+  notifyAccountChange(
+    hospital.isBlocked ? 'hospital_blocked' : 'hospital_unblocked',
+    hospital,
+    hospital.isBlocked
+      ? 'Your hospital account has been blocked'
+      : 'Your hospital account has been unblocked'
+  );
 
   res.status(200).json({
     success: true,

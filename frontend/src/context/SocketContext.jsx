@@ -12,33 +12,75 @@ import { connectSocket, disconnectSocket } from '../services/socket';
 import { showInfo, showRequestResponse, showSuccess } from '../utils/toast';
 
 const SocketContext = createContext(null);
+const MAX_NOTIFICATIONS = 50;
 
-const createNotification = (type, data) => ({
-  id: `${type}-${data.requestId || data.request?._id || data.action}-${Date.now()}`,
-  type,
-  read: false,
-  createdAt: new Date().toISOString(),
-  requestId: data.requestId || data.request?._id,
-  status: data.status,
-  requesterName: data.requesterName,
-  bloodGroup: data.bloodGroup,
-  message: data.message,
-  emergency: data.emergency,
-  request: data.request,
-  action: data.action,
-});
+const buildNotificationId = (type, data) => {
+  const key =
+    data.requestId ||
+    data.action ||
+    data.targetUserId ||
+    `${type}-${data.createdAt}`;
+  return `${type}-${key}-${data.createdAt || ''}`;
+};
 
-const adminActionLabels = {
-  user_blocked: 'User blocked',
-  user_unblocked: 'User unblocked',
-  user_deleted: 'User removed',
-  donor_deleted: 'Donor removed',
-  hospital_verified: 'Hospital verified',
-  hospital_unverified: 'Hospital unverified',
-  hospital_blocked: 'Hospital blocked',
-  hospital_unblocked: 'Hospital unblocked',
-  request_created: 'New blood request',
-  request_status_changed: 'Request status updated',
+const buildNotification = (type, data) => {
+  const createdAt = data.createdAt || new Date().toISOString();
+
+  return {
+    id: buildNotificationId(type, data),
+    type,
+    read: false,
+    createdAt,
+    requestId: data.requestId,
+    requesterId: data.requesterId,
+    requesterName: data.requesterName,
+    donorId: data.donorId,
+    donorName: data.donorName,
+    status: data.status,
+    bloodGroup: data.bloodGroup,
+    message: data.message,
+    emergency: data.emergency,
+    action: data.action,
+    targetUserId: data.targetUserId,
+    title: data.title,
+    body: data.body,
+    request: data.request,
+  };
+};
+
+const getNotificationCopy = (notification) => {
+  switch (notification.type) {
+    case 'new_request':
+      return {
+        title: `New request from ${notification.requesterName || 'someone'}`,
+        body: [
+          notification.bloodGroup && `Blood group: ${notification.bloodGroup}`,
+          notification.emergency && 'Emergency',
+          notification.message,
+        ]
+          .filter(Boolean)
+          .join(' · '),
+      };
+    case 'request_response':
+      return {
+        title: `Request ${notification.status}`,
+        body: notification.donorName
+          ? `${notification.donorName} · ${notification.bloodGroup || ''}`
+          : notification.bloodGroup || '',
+      };
+    case 'admin_update':
+      return {
+        title: notification.body || notification.message || 'Platform update',
+        body: notification.action?.replace(/_/g, ' ') || '',
+      };
+    case 'account_update':
+      return {
+        title: notification.body || notification.message || 'Account update',
+        body: '',
+      };
+    default:
+      return { title: 'Notification', body: '' };
+  }
 };
 
 export const SocketProvider = ({ children }) => {
@@ -46,13 +88,36 @@ export const SocketProvider = ({ children }) => {
   const [connected, setConnected] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [notifications, setNotifications] = useState([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+
+  const userRef = useRef(user);
+  const seenNotificationIdsRef = useRef(new Set());
   const requestListenersRef = useRef(new Set());
   const adminStatsListenersRef = useRef(new Set());
 
-  const addNotification = useCallback((notification) => {
-    setNotifications((prev) => [notification, ...prev].slice(0, 50));
-    setUnreadCount((count) => count + 1);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      seenNotificationIdsRef.current.clear();
+      setNotifications([]);
+    }
+  }, [isAuthenticated]);
+
+  const pushNotification = useCallback((notification) => {
+    if (seenNotificationIdsRef.current.has(notification.id)) {
+      return false;
+    }
+    seenNotificationIdsRef.current.add(notification.id);
+
+    const enriched = {
+      ...notification,
+      ...getNotificationCopy(notification),
+    };
+
+    setNotifications((prev) => [enriched, ...prev].slice(0, MAX_NOTIFICATIONS));
+    return true;
   }, []);
 
   const subscribeToRequests = useCallback((handler) => {
@@ -86,38 +151,29 @@ export const SocketProvider = ({ children }) => {
   }, []);
 
   const markAllRead = useCallback(() => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-    setUnreadCount(0);
+    setNotifications((prev) => {
+      const hasUnread = prev.some((n) => !n.read);
+      if (!hasUnread) return prev;
+      return prev.map((n) => ({ ...n, read: true }));
+    });
   }, []);
 
   const markAsRead = useCallback((id) => {
-    setNotifications((prev) =>
-      prev.map((n) => {
-        if (n.id === id && !n.read) {
-          setUnreadCount((c) => Math.max(0, c - 1));
-          return { ...n, read: true };
-        }
-        return n;
-      })
-    );
+    setNotifications((prev) => {
+      const target = prev.find((n) => n.id === id);
+      if (!target || target.read) return prev;
+      return prev.map((n) => (n.id === id ? { ...n, read: true } : n));
+    });
   }, []);
 
   const clearNotifications = useCallback(() => {
+    seenNotificationIdsRef.current.clear();
     setNotifications([]);
-    setUnreadCount(0);
   }, []);
 
-  const handleRequestResponse = useCallback(
-    (data, sourceEvent) => {
-      const notification = createNotification(sourceEvent, data);
-      addNotification(notification);
-      notifyRequestListeners({ type: sourceEvent, ...data });
-
-      if (user?.role === 'user' || user?.role === 'hospital') {
-        showRequestResponse(data.status, data.donorName);
-      }
-    },
-    [user?.role, addNotification, notifyRequestListeners]
+  const unreadCount = useMemo(
+    () => notifications.filter((n) => !n.read).length,
+    [notifications]
   );
 
   useEffect(() => {
@@ -135,11 +191,14 @@ export const SocketProvider = ({ children }) => {
     const onDisconnect = () => setConnected(false);
 
     const onNewRequest = (data) => {
-      const notification = createNotification('new_request', data);
-      addNotification(notification);
+      console.log('SOCKET EVENT RECEIVED:', 'new_request', data);
+
       notifyRequestListeners({ type: 'new_request', ...data });
 
-      if (user.role === 'donor') {
+      if (userRef.current?.role !== 'donor') return;
+
+      const notification = buildNotification('new_request', data);
+      if (pushNotification(notification)) {
         showSuccess(
           `New request from ${data.requesterName} (${data.bloodGroup})`
         );
@@ -147,20 +206,43 @@ export const SocketProvider = ({ children }) => {
     };
 
     const onRequestResponse = (data) => {
-      handleRequestResponse(data, 'request_response');
+      console.log('SOCKET EVENT RECEIVED:', 'request_response', data);
+
+      notifyRequestListeners({ type: 'request_response', ...data });
+
+      const role = userRef.current?.role;
+      if (role !== 'user' && role !== 'hospital') return;
+
+      const notification = buildNotification('request_response', data);
+      if (pushNotification(notification)) {
+        showRequestResponse(data.status, data.donorName);
+      }
+    };
+
+    const onRequestUpdated = (data) => {
+      console.log('SOCKET EVENT RECEIVED:', 'request_updated', data);
+      notifyRequestListeners({ type: 'request_updated', ...data });
     };
 
     const onAdminUpdate = (data) => {
-      const notification = createNotification('admin_update', data);
-      addNotification(notification);
+      console.log('SOCKET EVENT RECEIVED:', 'admin_update', data);
+
       notifyAdminStatsListeners({ type: 'admin_update', ...data });
 
-      if (user.role === 'admin') {
-        const label = adminActionLabels[data.action] || 'Platform update';
-        showInfo(label);
-      } else if (data.action?.includes('block') && data.targetUserId === user._id) {
-        showInfo('Your account status was updated by an administrator');
+      if (userRef.current?.role !== 'admin') return;
+
+      const notification = buildNotification('admin_update', {
+        ...data,
+        body: data.message,
+      });
+      if (pushNotification(notification)) {
+        showInfo(data.message || 'Platform update');
       }
+    };
+
+    const onAccountUpdate = (data) => {
+      console.log('SOCKET EVENT RECEIVED:', 'account_update', data);
+      showInfo(data.message || 'Your account was updated');
     };
 
     const onOnlineStatus = (list) => {
@@ -171,7 +253,9 @@ export const SocketProvider = ({ children }) => {
     socket.on('disconnect', onDisconnect);
     socket.on('new_request', onNewRequest);
     socket.on('request_response', onRequestResponse);
+    socket.on('request_updated', onRequestUpdated);
     socket.on('admin_update', onAdminUpdate);
+    socket.on('account_update', onAccountUpdate);
     socket.on('user_online_status', onOnlineStatus);
 
     if (socket.connected) {
@@ -183,19 +267,20 @@ export const SocketProvider = ({ children }) => {
       socket.off('disconnect', onDisconnect);
       socket.off('new_request', onNewRequest);
       socket.off('request_response', onRequestResponse);
+      socket.off('request_updated', onRequestUpdated);
       socket.off('admin_update', onAdminUpdate);
+      socket.off('account_update', onAccountUpdate);
       socket.off('user_online_status', onOnlineStatus);
       disconnectSocket();
       setConnected(false);
     };
   }, [
-    user,
-    isAuthenticated,
     loading,
-    addNotification,
+    isAuthenticated,
+    user?._id,
+    pushNotification,
     notifyRequestListeners,
     notifyAdminStatsListeners,
-    handleRequestResponse,
   ]);
 
   const value = useMemo(
