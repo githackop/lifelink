@@ -4,7 +4,7 @@ import HospitalDonor from '../models/HospitalDonor.js';
 import { BLOOD_GROUPS } from '../models/User.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import AppError from '../utils/AppError.js';
-import { emitNewRequest, emitRequestUpdated } from '../sockets/socketManager.js';
+import { emitNewRequest, emitRequestResponse, emitToAdmins } from '../sockets/socketManager.js';
 
 const requesterFields = 'name email role phoneNumber hospitalName city';
 const donorFields = 'name email bloodGroup city availability phoneNumber';
@@ -58,14 +58,18 @@ export const createRequest = asyncHandler(async (req, res) => {
     throw new AppError('Valid blood group is required', 400);
   }
 
-  const existingPending = await BloodRequest.findOne({
+  const existingActive = await BloodRequest.findOne({
     requesterId: req.user._id,
     donorId: donor._id,
-    status: 'pending',
+    status: { $in: ['pending', 'accepted'] },
+    completed: { $ne: true },
   });
 
-  if (existingPending) {
-    throw new AppError('You already have a pending request with this donor', 400);
+  if (existingActive) {
+    throw new AppError(
+      `You already have an active ${existingActive.status} request with this donor`,
+      400
+    );
   }
 
   const isHospital = req.user.role === 'hospital';
@@ -92,6 +96,12 @@ export const createRequest = asyncHandler(async (req, res) => {
     hospitalName: formatted.hospitalName,
     requester: formatted.requester,
     request: formatted,
+  });
+
+  emitToAdmins('admin_update', {
+    action: 'request_created',
+    request: formatted,
+    timestamp: new Date().toISOString(),
   });
 
   res.status(201).json({
@@ -227,10 +237,18 @@ export const updateRequestStatus = asyncHandler(async (req, res) => {
   const populated = await populateRequest(BloodRequest.findById(bloodRequest._id));
   const formatted = formatRequest(populated);
 
-  emitRequestUpdated(bloodRequest.requesterId, {
+  emitRequestResponse(bloodRequest.requesterId.toString(), {
     requestId: formatted._id,
     status: formatted.status,
     request: formatted,
+    donorName: formatted.donor?.name,
+    bloodGroup: formatted.bloodGroup,
+  });
+
+  emitToAdmins('admin_update', {
+    action: 'request_status_changed',
+    request: formatted,
+    timestamp: new Date().toISOString(),
   });
 
   res.status(200).json({

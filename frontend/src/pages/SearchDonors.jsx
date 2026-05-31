@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Search, Filter, Droplets, MapPin, RefreshCw, Users, AlertTriangle } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { showError, showSuccess } from '../utils/toast';
 import { useAuth } from '../context/AuthContext';
 import { searchDonors } from '../services/donorsService';
 import { createRequest } from '../services/requestService';
@@ -9,8 +9,9 @@ import { getErrorMessage } from '../services/api';
 import { BLOOD_GROUPS } from '../utils/bloodGroups';
 import DonorCard from '../components/requests/DonorCard';
 import SendRequestModal from '../components/requests/SendRequestModal';
-import LoadingSpinner from '../components/ui/LoadingSpinner';
 import Button from '../components/ui/Button';
+import EmptyState from '../components/ui/EmptyState';
+import { SkeletonDonorGrid } from '../components/ui/Skeleton';
 
 const defaultFilters = {
   search: '',
@@ -74,12 +75,12 @@ const SearchDonors = () => {
     setSubmitLoading(true);
     try {
       await createRequest(payload);
-      toast.success('Blood request sent successfully');
+      showSuccess('Blood request sent successfully');
       setModalOpen(false);
       setSelectedDonor(null);
       fetchDonors();
     } catch (err) {
-      toast.error(getErrorMessage(err));
+      showError(getErrorMessage(err));
     } finally {
       setSubmitLoading(false);
     }
@@ -194,9 +195,7 @@ const SearchDonors = () => {
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-20">
-          <LoadingSpinner size="lg" />
-        </div>
+        <SkeletonDonorGrid count={6} />
       ) : error ? (
         <div className="text-center py-16 rounded-2xl bg-red-50 border border-red-100">
           <p className="text-red-600 font-medium">{error}</p>
@@ -205,15 +204,11 @@ const SearchDonors = () => {
           </Button>
         </div>
       ) : donors.length === 0 ? (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="text-center py-16 rounded-2xl border border-dashed border-slate-200 bg-white/50"
-        >
-          <Droplets className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-          <p className="font-medium text-slate-700">No donors found</p>
-          <p className="text-sm text-slate-500 mt-1">Try adjusting your filters or check back later.</p>
-        </motion.div>
+        <EmptyState
+          icon={Droplets}
+          title="No donors found"
+          description="Try adjusting your filters or check back later."
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {donors.map((donor, index) => (

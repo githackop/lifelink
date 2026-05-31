@@ -1,11 +1,15 @@
-import LoadingSpinner from '../ui/LoadingSpinner';
-import Button from '../ui/Button';
 import { AlertCircle } from 'lucide-react';
+import Button from '../ui/Button';
+import { SkeletonStatGrid, SkeletonBlock, SkeletonLine } from '../ui/Skeleton';
 
 export const DashboardLoading = () => (
-  <div className="flex flex-col items-center justify-center py-24 gap-3">
-    <LoadingSpinner size="lg" />
-    <p className="text-sm text-slate-500">Loading dashboard...</p>
+  <div className="space-y-8">
+    <SkeletonBlock className="h-36 w-full rounded-3xl" />
+    <SkeletonStatGrid count={4} />
+    <div className="rounded-2xl border border-white/60 bg-white/70 p-6 space-y-4">
+      <SkeletonLine className="w-40 h-4" />
+      <SkeletonBlock className="h-32 w-full" />
+    </div>
   </div>
 );
 

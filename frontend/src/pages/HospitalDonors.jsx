@@ -1,7 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Phone, Mail, Calendar, Users, Plus, X } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { showError, showSuccess } from '../utils/toast';
+import EmptyState from '../components/ui/EmptyState';
+import { SkeletonCardList } from '../components/ui/Skeleton';
 
 import {
   getHospitalDonors,
@@ -33,7 +35,7 @@ const HospitalDonors = () => {
       const { data } = await getHospitalDonors();
       setDonors(data?.donors || []);
     } catch (err) {
-      toast.error(getErrorMessage(err));
+      showError(getErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -59,14 +61,14 @@ const HospitalDonors = () => {
   const handleSubmit = async () => {
     try {
       if (!form.name || !form.phoneNumber || !form.bloodGroup) {
-        toast.error('Name, Phone Number, and Blood Group are required');
+        showError('Name, Phone Number, and Blood Group are required');
         return;
       }
 
       // IMPORTANT: send RAW object (not wrapped)
       await addManualHospitalDonor(form);
 
-      toast.success('Donor added successfully');
+      showSuccess('Donor added successfully');
 
       setForm({
         name: '',
@@ -79,7 +81,7 @@ const HospitalDonors = () => {
       setShowForm(false);
       fetchDonors();
     } catch (err) {
-      toast.error(getErrorMessage(err));
+      showError(getErrorMessage(err));
     }
   };
 
@@ -91,11 +93,14 @@ const HospitalDonors = () => {
 
       {/* HEADER */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Users className="w-6 h-6 text-rose-500" />
-          <h1 className="text-2xl font-bold">
-            Hospital Donor Directory
-          </h1>
+        <div>
+          <div className="flex items-center gap-2">
+            <Users className="w-6 h-6 text-rose-500" />
+            <h1 className="text-2xl font-bold text-slate-900">Hospital Donors</h1>
+          </div>
+          <p className="text-sm text-slate-500 mt-1 ml-8">
+            Donors linked to your facility after completed donations
+          </p>
         </div>
 
         <button
@@ -162,9 +167,13 @@ const HospitalDonors = () => {
 
       {/* LOADING */}
       {loading ? (
-        <p className="text-slate-500">Loading donors...</p>
+        <SkeletonCardList count={4} />
       ) : donors.length === 0 ? (
-        <p className="text-slate-500">No donors found yet.</p>
+        <EmptyState
+          icon={Users}
+          title="No hospital donors yet"
+          description="Donors appear here after you complete a blood request with them, or add one manually."
+        />
       ) : (
         <div className="grid gap-4">
 

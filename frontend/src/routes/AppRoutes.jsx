@@ -16,12 +16,15 @@ import ForgotPassword from '../pages/ForgotPassword';
 import ResetPassword from '../pages/ResetPassword';
 import ProfilePage from '../pages/ProfilePage';
 
-import PlaceholderPage from '../pages/PlaceholderPage';
 import DonorAvailabilityPage from '../pages/DonorAvailabilityPage';
 import SearchDonors from '../pages/SearchDonors';
 import Requests from '../pages/Requests';
 import DonationHistory from '../pages/DonationHistory';
 import EmergencyRequests from '../pages/EmergencyRequests';
+import AdminDashboard from '../pages/admin/AdminDashboard';
+import AdminUsers from '../pages/admin/AdminUsers';
+import AdminDonors from '../pages/admin/AdminDonors';
+import AdminHospitals from '../pages/admin/AdminHospitals';
 
 const AppRoutes = () => (
   <BrowserRouter>
@@ -104,13 +107,19 @@ const AppRoutes = () => (
 
             {/* ADMIN ROUTES */}
             <Route
+              path="admin-dashboard"
+              element={
+                <RoleRoute roles={['admin']}>
+                  <AdminDashboard />
+                </RoleRoute>
+              }
+            />
+
+            <Route
               path="users"
               element={
                 <RoleRoute roles={['admin']}>
-                  <PlaceholderPage
-                    title="Users"
-                    description="Manage community member accounts."
-                  />
+                  <AdminUsers />
                 </RoleRoute>
               }
             />
@@ -119,10 +128,7 @@ const AppRoutes = () => (
               path="donors"
               element={
                 <RoleRoute roles={['admin']}>
-                  <PlaceholderPage
-                    title="Donors"
-                    description="Manage donor accounts and availability."
-                  />
+                  <AdminDonors />
                 </RoleRoute>
               }
             />
@@ -131,22 +137,7 @@ const AppRoutes = () => (
               path="hospitals"
               element={
                 <RoleRoute roles={['admin']}>
-                  <PlaceholderPage
-                    title="Hospitals"
-                    description="Manage hospital registrations and licenses."
-                  />
-                </RoleRoute>
-              }
-            />
-
-            <Route
-              path="verifications"
-              element={
-                <RoleRoute roles={['admin']}>
-                  <PlaceholderPage
-                    title="Verifications"
-                    description="Review pending hospital and donor verifications."
-                  />
+                  <AdminHospitals />
                 </RoleRoute>
               }
             />

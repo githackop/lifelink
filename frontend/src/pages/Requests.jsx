@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ClipboardList, Inbox, RefreshCw, Radio } from 'lucide-react';
-import toast from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import {
   getReceivedRequests,
   getSentRequests,
   updateRequestStatus,
-  completeRequest as completeRequestAPI, // ✅ ADDED
+  completeRequest as completeRequestAPI,
 } from '../services/requestService';
 import { getErrorMessage } from '../services/api';
+import { showError, showSuccess } from '../utils/toast';
 import RequestCard from '../components/requests/RequestCard';
-import LoadingSpinner from '../components/ui/LoadingSpinner';
+import EmptyState from '../components/ui/EmptyState';
+import { SkeletonCardList } from '../components/ui/Skeleton';
 import Button from '../components/ui/Button';
 
 const Requests = () => {
@@ -27,7 +28,6 @@ const Requests = () => {
 
   const fetchRequests = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
-
     setError('');
 
     try {
@@ -56,13 +56,15 @@ const Requests = () => {
           if (exists) return prev;
           return [event.request, ...prev];
         });
+        return;
       }
 
-      if (event.type === 'request_updated' && event.request) {
+      if (
+        (event.type === 'request_response' || event.type === 'request_updated') &&
+        event.request
+      ) {
         setRequests((prev) =>
-          prev.map((r) =>
-            r._id === event.request._id ? event.request : r
-          )
+          prev.map((r) => (r._id === event.request._id ? event.request : r))
         );
       }
     });
@@ -77,27 +79,24 @@ const Requests = () => {
       setRequests((prev) =>
         prev.map((r) => (r._id === id ? data.request : r))
       );
-      toast.success(data.message);
+      showSuccess(data.message);
     } catch (err) {
-      toast.error(getErrorMessage(err));
+      showError(getErrorMessage(err));
     } finally {
       setActionLoadingId(null);
     }
   };
 
-  // 🔥 NEW: Complete donation handler
   const handleComplete = async (id) => {
     setActionLoadingId(id);
     try {
       const { data } = await completeRequestAPI(id);
-
       setRequests((prev) =>
         prev.map((r) => (r._id === id ? data.request : r))
       );
-
-      toast.success(data.message);
+      showSuccess(data.message);
     } catch (err) {
-      toast.error(getErrorMessage(err));
+      showError(getErrorMessage(err));
     } finally {
       setActionLoadingId(null);
     }
@@ -122,10 +121,7 @@ const Requests = () => {
       >
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">
-              {title}
-            </h1>
-
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">{title}</h1>
             {connected && (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase">
                 <Radio className="w-3 h-3" />
@@ -133,7 +129,6 @@ const Requests = () => {
               </span>
             )}
           </div>
-
           <p className="text-slate-500 mt-1 text-sm">{subtitle}</p>
 
           {!loading && requests.length > 0 && (
@@ -163,9 +158,7 @@ const Requests = () => {
       </motion.div>
 
       {loading ? (
-        <div className="flex justify-center py-20">
-          <LoadingSpinner size="lg" />
-        </div>
+        <SkeletonCardList count={3} />
       ) : error ? (
         <div className="text-center py-16 rounded-2xl bg-red-50 border border-red-100">
           <p className="text-red-600 font-medium">{error}</p>
@@ -174,19 +167,15 @@ const Requests = () => {
           </Button>
         </div>
       ) : requests.length === 0 ? (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="text-center py-16 rounded-2xl border border-dashed border-slate-200 bg-white/50"
-        >
-          <EmptyIcon className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-          <p className="font-medium text-slate-700">No requests yet</p>
-          <p className="text-sm text-slate-500 mt-1 max-w-sm mx-auto">
-            {isDonor
+        <EmptyState
+          icon={EmptyIcon}
+          title="No requests yet"
+          description={
+            isDonor
               ? 'When someone sends you a blood request, it will appear here instantly.'
-              : 'Search for donors and send a request to get started.'}
-          </p>
-        </motion.div>
+              : 'Search for donors and send a request to get started.'
+          }
+        />
       ) : (
         <div className="space-y-4">
           {requests.map((request, index) => (
@@ -197,7 +186,7 @@ const Requests = () => {
               index={index}
               onAccept={(id) => handleStatusUpdate(id, 'accepted')}
               onReject={(id) => handleStatusUpdate(id, 'rejected')}
-              onComplete={handleComplete}   // ✅ ADDED
+              onComplete={handleComplete}
               actionLoadingId={actionLoadingId}
             />
           ))}
