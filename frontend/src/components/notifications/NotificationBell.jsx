@@ -31,7 +31,7 @@ const formatTime = (iso) => {
 };
 
 const NotificationIcon = ({ item }) => {
-  if (item.type === 'new_request') {
+  if (item.type === 'new_request' || item.type === 'broadcast_request') {
     return <Droplets className="w-4 h-4" />;
   }
   if (item.type === 'admin_update') {
@@ -44,7 +44,7 @@ const NotificationIcon = ({ item }) => {
 };
 
 const iconClassFor = (item) => {
-  if (item.type === 'new_request') return 'bg-rose-100 text-rose-600';
+  if (item.type === 'new_request' || item.type === 'broadcast_request') return 'bg-rose-100 text-rose-600';
   if (item.type === 'admin_update') return 'bg-violet-100 text-violet-600';
   if (item.status === 'accepted') return 'bg-emerald-100 text-emerald-600';
   if (item.status === 'rejected') return 'bg-red-100 text-red-600';

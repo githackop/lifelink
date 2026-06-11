@@ -25,6 +25,7 @@ import AdminDashboard from '../pages/admin/AdminDashboard';
 import AdminUsers from '../pages/admin/AdminUsers';
 import AdminDonors from '../pages/admin/AdminDonors';
 import AdminHospitals from '../pages/admin/AdminHospitals';
+import BloodRequestsFeed from '../pages/BloodRequestsFeed';
 
 const AppRoutes = () => (
   <BrowserRouter>
@@ -41,6 +42,15 @@ const AppRoutes = () => (
           >
             <Route index element={<Home />} />
             <Route path="profile" element={<ProfilePage />} />
+
+            <Route
+              path="blood-requests"
+              element={
+                <RoleRoute roles={['user', 'donor', 'hospital', 'admin']}>
+                  <BloodRequestsFeed />
+                </RoleRoute>
+              }
+            />
 
             <Route
               path="search-donors"

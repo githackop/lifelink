@@ -61,6 +61,11 @@ const getNotificationCopy = (notification) => {
           .filter(Boolean)
           .join(' · '),
       };
+    case 'broadcast_request':
+      return {
+        title: `🚨 Emergency Blood Request`,
+        body: `${notification.bloodGroup} blood urgently needed in ${notification.city}`,
+      };
     case 'request_response':
       return {
         title: `Request ${notification.status}`,
@@ -224,6 +229,22 @@ export const SocketProvider = ({ children }) => {
       notifyRequestListeners({ type: 'request_updated', ...data });
     };
 
+    const onBroadcastRequest = (data) => {
+      console.log('SOCKET EVENT RECEIVED:', 'broadcast_request', data);
+
+      notifyRequestListeners({ type: 'broadcast_request', ...data });
+
+      const role = userRef.current?.role;
+      if (role !== 'donor' && role !== 'hospital' && role !== 'admin') return;
+
+      const notification = buildNotification('broadcast_request', data);
+      if (pushNotification(notification)) {
+        showSuccess(
+          `🚨 Emergency: ${data.bloodGroup} needed in ${data.city}`
+        );
+      }
+    };
+
     const onAdminUpdate = (data) => {
       console.log('SOCKET EVENT RECEIVED:', 'admin_update', data);
 
@@ -252,6 +273,7 @@ export const SocketProvider = ({ children }) => {
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
     socket.on('new_request', onNewRequest);
+    socket.on('broadcast_request', onBroadcastRequest);
     socket.on('request_response', onRequestResponse);
     socket.on('request_updated', onRequestUpdated);
     socket.on('admin_update', onAdminUpdate);
@@ -266,6 +288,7 @@ export const SocketProvider = ({ children }) => {
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       socket.off('new_request', onNewRequest);
+      socket.off('broadcast_request', onBroadcastRequest);
       socket.off('request_response', onRequestResponse);
       socket.off('request_updated', onRequestUpdated);
       socket.off('admin_update', onAdminUpdate);

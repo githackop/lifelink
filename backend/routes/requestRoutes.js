@@ -7,7 +7,9 @@ import {
   getRequestStats,
   getEmergencyRequests,
   updateRequestStatus,
-  completeRequest, // ✅ ADD THIS IMPORT
+  completeRequest,
+  getBroadcastRequests,
+  volunteerForRequest,
 } from '../controllers/requestController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { authorize } from '../middleware/roleMiddleware.js';
@@ -15,6 +17,8 @@ import { authorize } from '../middleware/roleMiddleware.js';
 const router = express.Router();
 
 router.post('/create', protect, authorize('user', 'hospital'), createRequest);
+router.get('/broadcasts', protect, getBroadcastRequests);
+router.post('/:id/volunteer', protect, authorize('donor'), volunteerForRequest);
 router.get('/history', protect, authorize('donor'), getDonationHistory);
 router.get('/stats', protect, authorize('user', 'donor', 'hospital'), getRequestStats);
 router.get('/emergency', protect, authorize('hospital'), getEmergencyRequests);

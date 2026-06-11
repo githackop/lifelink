@@ -11,6 +11,7 @@ import {
   Users,
   Droplets,
   Building2,
+  Radio,
 } from 'lucide-react';
 
 export const roleLabels = {
@@ -35,6 +36,7 @@ export const roleLabels = {
 export const sidebarMenus = {
   user: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
+    { label: 'Broadcast Feed', icon: Radio, path: '/blood-requests' },
     { label: 'Search Donors', icon: Search, path: '/search-donors' },
     { label: 'My Requests', icon: ClipboardList, path: '/my-requests' },
     { label: 'Profile', icon: User, path: '/profile' },
@@ -42,6 +44,7 @@ export const sidebarMenus = {
 
   donor: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
+    { label: 'Broadcast Feed', icon: Radio, path: '/blood-requests' },
     { label: 'Requests Received', icon: Inbox, path: '/requests-received' },
     { label: 'Availability Status', icon: ToggleLeft, path: '/availability' },
     { label: 'Donation History', icon: History, path: '/donation-history' },
@@ -50,6 +53,7 @@ export const sidebarMenus = {
 
   hospital: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/' },
+    { label: 'Broadcast Feed', icon: Radio, path: '/blood-requests' },
 
     {
       label: 'Emergency Requests',
@@ -71,6 +75,7 @@ export const sidebarMenus = {
 
   admin: [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/admin-dashboard' },
+    { label: 'Broadcast Feed', icon: Radio, path: '/blood-requests' },
     { label: 'Users', icon: Users, path: '/users' },
     { label: 'Donors', icon: Droplets, path: '/donors' },
     { label: 'Hospitals', icon: Building2, path: '/hospitals' },

@@ -17,3 +17,9 @@ export const updateRequestStatus = (id, status) =>
 
 export const completeRequest = (id) =>
   api.patch(`/requests/${id}/complete`);
+
+export const getBroadcastRequests = (params) =>
+  api.get('/requests/broadcasts', { params });
+
+export const volunteerForRequest = (id) =>
+  api.post(`/requests/${id}/volunteer`);

@@ -131,12 +131,18 @@ const AdminDashboard = () => {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <StatCard title="Total Broadcasts" value={stats.totalBroadcastRequests ?? 0} icon={Radio} accent="rose" delay={0.05} />
+        <StatCard title="Active Broadcasts" value={stats.activeBroadcastRequests ?? 0} icon={Droplets} accent="amber" delay={0.1} />
+        <StatCard title="Total Volunteers" value={stats.totalVolunteers ?? 0} icon={UserCheck} accent="emerald" delay={0.15} />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="rounded-2xl border border-white/60 bg-white/70 backdrop-blur-xl p-5 shadow-soft lg:col-span-1"
+          className="rounded-2xl border border-white/60 bg-white/70 backdrop-blur-xl p-5 shadow-soft"
         >
           <h3 className="font-semibold text-slate-900 text-sm">Donors by blood group</h3>
           <p className="text-xs text-slate-500 mt-0.5 mb-4">Registered donors</p>
@@ -161,7 +167,7 @@ const AdminDashboard = () => {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15 }}
-          className="rounded-2xl border border-white/60 bg-white/70 backdrop-blur-xl p-5 shadow-soft lg:col-span-1"
+          className="rounded-2xl border border-white/60 bg-white/70 backdrop-blur-xl p-5 shadow-soft"
         >
           <h3 className="font-semibold text-slate-900 text-sm">Users by role</h3>
           <p className="text-xs text-slate-500 mt-0.5 mb-4">Platform distribution</p>
@@ -194,7 +200,7 @@ const AdminDashboard = () => {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="rounded-2xl border border-white/60 bg-white/70 backdrop-blur-xl p-5 shadow-soft lg:col-span-1"
+          className="rounded-2xl border border-white/60 bg-white/70 backdrop-blur-xl p-5 shadow-soft"
         >
           <h3 className="font-semibold text-slate-900 text-sm">Request status</h3>
           <p className="text-xs text-slate-500 mt-0.5 mb-4">
@@ -217,6 +223,31 @@ const AdminDashboard = () => {
                     />
                   ))}
                 </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25 }}
+          className="rounded-2xl border border-white/60 bg-white/70 backdrop-blur-xl p-5 shadow-soft"
+        >
+          <h3 className="font-semibold text-slate-900 text-sm">Blood group demand</h3>
+          <p className="text-xs text-slate-500 mt-0.5 mb-4">Broadcast requests by blood group</p>
+          {!stats.bloodGroupDemand || Object.keys(stats.bloodGroupDemand || {}).length === 0 ? (
+            <p className="text-sm text-slate-500 text-center py-12">No demand data yet</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={Object.entries(stats.bloodGroupDemand || {}).map(([bloodGroup, count]) => ({ bloodGroup, count }))} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="bloodGroup" tick={{ fontSize: 11 }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                <Tooltip
+                  contentStyle={{ borderRadius: 12, border: '1px solid #e2e8f0', fontSize: 12 }}
+                />
+                <Bar dataKey="count" fill="#8b5cf6" radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )}

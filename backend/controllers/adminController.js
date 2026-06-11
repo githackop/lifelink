@@ -54,6 +54,10 @@ export const getStats = asyncHandler(async (req, res) => {
     usersByRole,
     requestStatusBreakdown,
     recentRequests,
+    totalBroadcastRequests,
+    activeBroadcastRequests,
+    volunteersRes,
+    broadcastDemandStats,
   ] = await Promise.all([
     User.countDocuments(),
     User.countDocuments({ role: 'donor' }),
@@ -78,7 +82,27 @@ export const getStats = asyncHandler(async (req, res) => {
       .limit(8)
       .populate('requesterId', requesterFields)
       .populate('donorId', donorFields),
+    BloodRequest.countDocuments({ requestType: 'broadcast' }),
+    BloodRequest.countDocuments({ requestType: 'broadcast', status: 'pending' }),
+    BloodRequest.aggregate([
+      { $match: { requestType: 'broadcast' } },
+      { $project: { volunteersCount: { $size: { $ifNull: ['$volunteers', []] } } } },
+      { $group: { _id: null, total: { $sum: '$volunteersCount' } } }
+    ]),
+    BloodRequest.aggregate([
+      { $match: { requestType: 'broadcast' } },
+      { $group: { _id: '$bloodGroup', count: { $sum: 1 } } }
+    ])
   ]);
+
+  const totalVolunteers = volunteersRes[0]?.total || 0;
+  const bloodGroupDemand = {};
+  BLOOD_GROUPS.forEach(bg => { bloodGroupDemand[bg] = 0; });
+  broadcastDemandStats.forEach(stat => {
+    if (stat._id) {
+      bloodGroupDemand[stat._id] = stat.count;
+    }
+  });
 
   res.status(200).json({
     success: true,
@@ -89,6 +113,10 @@ export const getStats = asyncHandler(async (req, res) => {
         totalHospitals,
         activeUsers,
         totalRequests: requestStatusBreakdown.reduce((sum, r) => sum + r.count, 0),
+        totalBroadcastRequests,
+        activeBroadcastRequests,
+        totalVolunteers,
+        bloodGroupDemand,
       },
       recentUsers: recentUsers.map(formatAdminUser),
       charts: {

@@ -73,10 +73,7 @@ export const initSocket = (httpServer) => {
     });
 
     socket.join(`user:${socket.userId}`);
-
-    if (socket.userRole === 'admin') {
-      socket.join('role:admin');
-    }
+    socket.join(`role:${socket.userRole}`);
 
     broadcastOnlineUsers();
 
@@ -104,6 +101,23 @@ export const emitToUser = (userId, event, payload) => {
 
 export const emitToAdmins = (event, payload) => {
   emitToRoom('role:admin', event, payload);
+};
+
+export const emitBroadcastRequest = (payload) => {
+  const body = {
+    requestId: payload.requestId?.toString(),
+    requesterId: payload.requesterId?.toString(),
+    requesterName: payload.requesterName,
+    bloodGroup: payload.bloodGroup,
+    city: payload.city,
+    message: payload.message ?? null,
+    emergencyLevel: payload.emergencyLevel,
+    createdAt: payload.createdAt || new Date().toISOString(),
+  };
+
+  emitToRoom('role:donor', 'broadcast_request', body);
+  emitToRoom('role:hospital', 'broadcast_request', body);
+  emitToRoom('role:admin', 'broadcast_request', body);
 };
 
 /** Blood request created — notify donor only */
