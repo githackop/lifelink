@@ -12,8 +12,44 @@ const bloodRequestSchema = new mongoose.Schema(
     donorId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
+      required: false,
     },
+
+    requestType: {
+      type: String,
+      enum: ['direct', 'broadcast'],
+      default: 'direct',
+    },
+
+    city: {
+      type: String,
+      trim: true,
+    },
+
+    emergencyLevel: {
+      type: String,
+      enum: ['low', 'medium', 'high', 'urgent'],
+      default: 'medium',
+    },
+
+    volunteers: [
+      {
+        donorId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          required: true,
+        },
+        status: {
+          type: String,
+          enum: ['volunteered'],
+          default: 'volunteered',
+        },
+        volunteeredAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
 
     bloodGroup: {
       type: String,

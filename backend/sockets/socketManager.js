@@ -1,6 +1,7 @@
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import Notification from '../models/Notification.js';
 
 let io = null;
 
@@ -73,10 +74,7 @@ export const initSocket = (httpServer) => {
     });
 
     socket.join(`user:${socket.userId}`);
-
-    if (socket.userRole === 'admin') {
-      socket.join('role:admin');
-    }
+    socket.join(`role:${socket.userRole}`);
 
     broadcastOnlineUsers();
 
@@ -106,40 +104,106 @@ export const emitToAdmins = (event, payload) => {
   emitToRoom('role:admin', event, payload);
 };
 
-/** Blood request created — notify donor only */
-export const emitNewRequest = (donorId, payload) => {
+export const emitBroadcastRequest = (payload) => {
   const body = {
     requestId: payload.requestId?.toString(),
     requesterId: payload.requesterId?.toString(),
     requesterName: payload.requesterName,
-    donorId: payload.donorId?.toString(),
     bloodGroup: payload.bloodGroup,
+    city: payload.city,
     message: payload.message ?? null,
-    emergency: Boolean(payload.emergency),
+    emergencyLevel: payload.emergencyLevel,
     createdAt: payload.createdAt || new Date().toISOString(),
-    request: payload.request,
   };
 
-  emitToUser(donorId, 'new_request', body);
+  emitToRoom('role:donor', 'broadcast_request', body);
+  emitToRoom('role:hospital', 'broadcast_request', body);
+  emitToRoom('role:admin', 'broadcast_request', body);
+};
+
+/** Blood request created — notify donor only */
+export const emitNewRequest = async (donorId, payload) => {
+  try {
+    const notification = await Notification.create({
+      recipientId: donorId,
+      type: 'new_request',
+      title: `New request from ${payload.requesterName || 'someone'}`,
+      message: payload.message || `Blood group: ${payload.bloodGroup} needed`,
+      metadata: {
+        requestId: payload.requestId?.toString(),
+        requesterId: payload.requesterId?.toString(),
+        requesterName: payload.requesterName,
+        donorId: payload.donorId?.toString(),
+        bloodGroup: payload.bloodGroup,
+        message: payload.message ?? null,
+        emergency: Boolean(payload.emergency),
+        request: payload.request,
+      },
+    });
+
+    const body = {
+      _id: notification._id.toString(),
+      type: 'new_request',
+      read: false,
+      createdAt: notification.createdAt.toISOString(),
+      requestId: payload.requestId?.toString(),
+      requesterId: payload.requesterId?.toString(),
+      requesterName: payload.requesterName,
+      donorId: payload.donorId?.toString(),
+      bloodGroup: payload.bloodGroup,
+      message: payload.message ?? null,
+      emergency: Boolean(payload.emergency),
+      request: payload.request,
+    };
+
+    emitToUser(donorId, 'new_request', body);
+  } catch (err) {
+    console.error('Error in emitNewRequest:', err);
+  }
 };
 
 /** Donor accepted/rejected — notify requester (user/hospital) only */
-export const emitRequestResponse = (requesterId, payload) => {
-  const body = {
-    requestId: payload.requestId?.toString(),
-    donorId: payload.donorId?.toString(),
-    donorName: payload.donorName,
-    requesterId: payload.requesterId?.toString(),
-    status: payload.status,
-    bloodGroup: payload.bloodGroup,
-    createdAt: payload.createdAt || new Date().toISOString(),
-    request: payload.request,
-  };
+export const emitRequestResponse = async (requesterId, payload) => {
+  try {
+    const notification = await Notification.create({
+      recipientId: requesterId,
+      type: 'request_response',
+      title: `Request ${payload.status}`,
+      message: payload.donorName
+        ? `${payload.donorName} ${payload.status} your request`
+        : `Your blood request was ${payload.status}`,
+      metadata: {
+        requestId: payload.requestId?.toString(),
+        donorId: payload.donorId?.toString(),
+        donorName: payload.donorName,
+        requesterId: payload.requesterId?.toString(),
+        status: payload.status,
+        bloodGroup: payload.bloodGroup,
+        request: payload.request,
+      },
+    });
 
-  emitToUser(requesterId, 'request_response', body);
+    const body = {
+      _id: notification._id.toString(),
+      type: 'request_response',
+      read: false,
+      createdAt: notification.createdAt.toISOString(),
+      requestId: payload.requestId?.toString(),
+      donorId: payload.donorId?.toString(),
+      donorName: payload.donorName,
+      requesterId: payload.requesterId?.toString(),
+      status: payload.status,
+      bloodGroup: payload.bloodGroup,
+      request: payload.request,
+    };
 
-  // UI list refresh only (no duplicate notification on frontend)
-  emitToUser(requesterId, 'request_updated', { ...body, request: payload.request });
+    emitToUser(requesterId, 'request_response', body);
+
+    // UI list refresh only (no duplicate notification on frontend)
+    emitToUser(requesterId, 'request_updated', { ...body, request: payload.request });
+  } catch (err) {
+    console.error('Error in emitRequestResponse:', err);
+  }
 };
 
 /** @deprecated alias */
@@ -159,17 +223,45 @@ const ADMIN_MESSAGES = {
 };
 
 /** Platform admin actions — admins only */
-export const emitAdminUpdate = (payload) => {
-  const body = {
-    action: payload.action,
-    targetUserId: payload.targetUserId?.toString() || null,
-    message: payload.message || ADMIN_MESSAGES[payload.action] || 'Platform update',
-    createdAt: payload.createdAt || payload.timestamp || new Date().toISOString(),
-    user: payload.user,
-    request: payload.request,
-  };
+export const emitAdminUpdate = async (payload) => {
+  try {
+    const admins = await User.find({ role: 'admin' });
 
-  emitToAdmins('admin_update', body);
+    const notificationPromises = admins.map((admin) =>
+      Notification.create({
+        recipientId: admin._id,
+        type: 'admin_update',
+        title: payload.message || ADMIN_MESSAGES[payload.action] || 'Platform update',
+        message: payload.action?.replace(/_/g, ' ') || 'Platform action',
+        metadata: {
+          action: payload.action,
+          targetUserId: payload.targetUserId?.toString() || null,
+          message: payload.message || ADMIN_MESSAGES[payload.action] || 'Platform update',
+          user: payload.user,
+          request: payload.request,
+        },
+      })
+    );
+
+    const notifications = await Promise.all(notificationPromises);
+    const sampleNotification = notifications[0];
+
+    const body = {
+      _id: sampleNotification?._id?.toString() || new Date().getTime().toString(),
+      type: 'admin_update',
+      read: false,
+      createdAt: sampleNotification?.createdAt?.toISOString() || new Date().toISOString(),
+      action: payload.action,
+      targetUserId: payload.targetUserId?.toString() || null,
+      message: payload.message || ADMIN_MESSAGES[payload.action] || 'Platform update',
+      user: payload.user,
+      request: payload.request,
+    };
+
+    emitToAdmins('admin_update', body);
+  } catch (err) {
+    console.error('Error in emitAdminUpdate:', err);
+  }
 };
 
 /** Account status change for affected user (not shown in admin feed) */

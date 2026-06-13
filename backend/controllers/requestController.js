@@ -4,7 +4,7 @@ import HospitalDonor from '../models/HospitalDonor.js';
 import { BLOOD_GROUPS } from '../models/User.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import AppError from '../utils/AppError.js';
-import { emitNewRequest, emitRequestResponse, emitAdminUpdate } from '../sockets/socketManager.js';
+import { emitNewRequest, emitRequestResponse, emitAdminUpdate, emitBroadcastRequest } from '../sockets/socketManager.js';
 
 const requesterFields = 'name email role phoneNumber hospitalName city';
 const donorFields = 'name email bloodGroup city availability phoneNumber';
@@ -28,86 +28,226 @@ export const formatRequest = (request) => {
     updatedAt: doc.updatedAt,
     requester: doc.requesterId,
     donor: doc.donorId,
+    requestType: doc.requestType || 'direct',
+    city: doc.city,
+    emergencyLevel: doc.emergencyLevel,
+    volunteers: doc.volunteers?.map(v => ({
+      donorId: v.donorId?._id || v.donorId,
+      name: v.donorId?.name,
+      email: v.donorId?.email,
+      bloodGroup: v.donorId?.bloodGroup,
+      city: v.donorId?.city,
+      phoneNumber: v.donorId?.phoneNumber,
+      status: v.status,
+      volunteeredAt: v.volunteeredAt,
+    })) || [],
   };
 };
 
 export const createRequest = asyncHandler(async (req, res) => {
-  const { donorId, bloodGroup, message, emergency: emergencyBody } = req.body;
+  const { requestType = 'direct', donorId, bloodGroup, message, emergency: emergencyBody, city, emergencyLevel } = req.body;
 
-  if (!donorId) {
-    throw new AppError('Donor ID is required', 400);
+  if (requestType === 'direct') {
+    if (!donorId) {
+      throw new AppError('Donor ID is required', 400);
+    }
+
+    const donor = await User.findOne({ _id: donorId, role: 'donor' });
+
+    if (!donor) {
+      throw new AppError('Donor not found', 404);
+    }
+
+    if (!donor.availability) {
+      throw new AppError('This donor is currently unavailable', 400);
+    }
+
+    if (donor._id.equals(req.user._id)) {
+      throw new AppError('You cannot send a request to yourself', 400);
+    }
+
+    const resolvedBloodGroup = bloodGroup || donor.bloodGroup;
+
+    if (!resolvedBloodGroup || !BLOOD_GROUPS.includes(resolvedBloodGroup)) {
+      throw new AppError('Valid blood group is required', 400);
+    }
+
+    const existingActive = await BloodRequest.findOne({
+      requesterId: req.user._id,
+      donorId: donor._id,
+      status: { $in: ['pending', 'accepted'] },
+      completed: { $ne: true },
+    });
+
+    if (existingActive) {
+      throw new AppError(
+        `You already have an active ${existingActive.status} request with this donor`,
+        400
+      );
+    }
+
+    const isHospital = req.user.role === 'hospital';
+    const emergency = isHospital ? true : Boolean(emergencyBody);
+
+    const bloodRequest = await BloodRequest.create({
+      requesterId: req.user._id,
+      donorId: donor._id,
+      bloodGroup: resolvedBloodGroup,
+      message: message?.trim() || undefined,
+      emergency,
+      hospitalName: isHospital ? req.user.hospitalName : undefined,
+      requestType: 'direct',
+    });
+
+    const populated = await populateRequest(BloodRequest.findById(bloodRequest._id));
+    const formatted = formatRequest(populated);
+
+    emitNewRequest(donor._id, {
+      requestId: formatted._id,
+      requesterId: req.user._id,
+      requesterName: formatted.requester?.hospitalName || formatted.requester?.name,
+      donorId: donor._id,
+      bloodGroup: formatted.bloodGroup,
+      message: formatted.message,
+      emergency: formatted.emergency,
+      createdAt: formatted.createdAt,
+      request: formatted,
+    });
+
+    emitAdminUpdate({
+      action: 'request_created',
+      request: formatted,
+      createdAt: formatted.createdAt,
+    });
+
+    res.status(201).json({
+      success: true,
+      message: emergency ? 'Emergency blood request sent successfully' : 'Blood request sent successfully',
+      request: formatted,
+    });
+  } else if (requestType === 'broadcast') {
+    if (!bloodGroup || !BLOOD_GROUPS.includes(bloodGroup)) {
+      throw new AppError('Valid blood group is required', 400);
+    }
+
+    if (!city || !city.trim()) {
+      throw new AppError('City is required for broadcast requests', 400);
+    }
+
+    const isHospital = req.user.role === 'hospital';
+    const emergency = isHospital ? true : Boolean(emergencyBody);
+
+    const bloodRequest = await BloodRequest.create({
+      requesterId: req.user._id,
+      bloodGroup,
+      city: city.trim(),
+      message: message?.trim() || undefined,
+      emergency,
+      hospitalName: isHospital ? req.user.hospitalName : undefined,
+      requestType: 'broadcast',
+      emergencyLevel: emergencyLevel || (emergency ? 'urgent' : 'medium'),
+      status: 'pending',
+    });
+
+    const populated = await BloodRequest.findById(bloodRequest._id)
+      .populate('requesterId', requesterFields);
+
+    const formatted = formatRequest(populated);
+
+    emitBroadcastRequest({
+      requestId: formatted._id,
+      requesterId: req.user._id,
+      requesterName: formatted.requester?.hospitalName || formatted.requester?.name,
+      bloodGroup: formatted.bloodGroup,
+      city: bloodRequest.city,
+      message: formatted.message,
+      emergencyLevel: bloodRequest.emergencyLevel,
+      createdAt: formatted.createdAt,
+    });
+
+    emitAdminUpdate({
+      action: 'request_created',
+      request: formatted,
+      createdAt: formatted.createdAt,
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Emergency broadcast request sent successfully',
+      request: formatted,
+    });
+  } else {
+    throw new AppError('Invalid request type', 400);
+  }
+});
+
+export const getBroadcastRequests = asyncHandler(async (req, res) => {
+  const { bloodGroup, city, emergencyLevel } = req.query;
+  const filter = { requestType: 'broadcast' };
+
+  if (bloodGroup && BLOOD_GROUPS.includes(bloodGroup)) {
+    filter.bloodGroup = bloodGroup;
+  }
+  if (city && city.trim()) {
+    filter.city = { $regex: new RegExp(city.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i') };
+  }
+  if (emergencyLevel) {
+    filter.emergencyLevel = emergencyLevel;
   }
 
-  const donor = await User.findOne({ _id: donorId, role: 'donor' });
+  const requests = await BloodRequest.find(filter)
+    .populate('requesterId', requesterFields)
+    .populate('volunteers.donorId', 'name email bloodGroup city availability phoneNumber')
+    .sort({ createdAt: -1 });
 
-  if (!donor) {
-    throw new AppError('Donor not found', 404);
+  res.status(200).json({
+    success: true,
+    count: requests.length,
+    requests: requests.map(formatRequest),
+  });
+});
+
+export const volunteerForRequest = asyncHandler(async (req, res) => {
+  const bloodRequest = await BloodRequest.findById(req.params.id);
+
+  if (!bloodRequest) {
+    throw new AppError('Broadcast request not found', 404);
   }
 
-  if (!donor.availability) {
-    throw new AppError('This donor is currently unavailable', 400);
+  if (bloodRequest.requestType !== 'broadcast') {
+    throw new AppError('You can only volunteer for broadcast requests', 400);
   }
 
-  if (donor._id.equals(req.user._id)) {
-    throw new AppError('You cannot send a request to yourself', 400);
+  const donorId = req.user._id;
+  const alreadyVolunteered = bloodRequest.volunteers.some((v) => v.donorId.equals(donorId));
+
+  if (alreadyVolunteered) {
+    throw new AppError('You have already volunteered for this request', 400);
   }
 
-  const resolvedBloodGroup = bloodGroup || donor.bloodGroup;
-
-  if (!resolvedBloodGroup || !BLOOD_GROUPS.includes(resolvedBloodGroup)) {
-    throw new AppError('Valid blood group is required', 400);
-  }
-
-  const existingActive = await BloodRequest.findOne({
-    requesterId: req.user._id,
-    donorId: donor._id,
-    status: { $in: ['pending', 'accepted'] },
-    completed: { $ne: true },
+  bloodRequest.volunteers.push({
+    donorId,
+    status: 'volunteered',
+    volunteeredAt: new Date(),
   });
 
-  if (existingActive) {
-    throw new AppError(
-      `You already have an active ${existingActive.status} request with this donor`,
-      400
-    );
-  }
+  await bloodRequest.save();
 
-  const isHospital = req.user.role === 'hospital';
-  const emergency = isHospital ? true : Boolean(emergencyBody);
+  const updated = await BloodRequest.findById(bloodRequest._id)
+    .populate('requesterId', requesterFields)
+    .populate('volunteers.donorId', 'name email bloodGroup city availability phoneNumber');
 
-  const bloodRequest = await BloodRequest.create({
-    requesterId: req.user._id,
-    donorId: donor._id,
-    bloodGroup: resolvedBloodGroup,
-    message: message?.trim() || undefined,
-    emergency,
-    hospitalName: isHospital ? req.user.hospitalName : undefined,
-  });
-
-  const populated = await populateRequest(BloodRequest.findById(bloodRequest._id));
-  const formatted = formatRequest(populated);
-
-  emitNewRequest(donor._id, {
-    requestId: formatted._id,
-    requesterId: req.user._id,
-    requesterName: formatted.requester?.hospitalName || formatted.requester?.name,
-    donorId: donor._id,
-    bloodGroup: formatted.bloodGroup,
-    message: formatted.message,
-    emergency: formatted.emergency,
-    createdAt: formatted.createdAt,
-    request: formatted,
-  });
+  const formatted = formatRequest(updated);
 
   emitAdminUpdate({
-    action: 'request_created',
+    action: 'request_status_changed',
     request: formatted,
-    createdAt: formatted.createdAt,
+    createdAt: new Date().toISOString(),
   });
 
-  res.status(201).json({
+  res.status(200).json({
     success: true,
-    message: emergency ? 'Emergency blood request sent successfully' : 'Blood request sent successfully',
+    message: 'Thank you for volunteering! The requester has been notified.',
     request: formatted,
   });
 });
