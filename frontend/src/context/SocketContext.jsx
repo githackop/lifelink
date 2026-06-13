@@ -10,12 +10,19 @@ import {
 import { useAuth } from './AuthContext';
 import { connectSocket, disconnectSocket } from '../services/socket';
 import { showInfo, showRequestResponse, showSuccess } from '../utils/toast';
+import {
+  getNotifications,
+  getUnreadCount,
+  markRead as markReadAPI,
+  markAllRead as markAllReadAPI,
+} from '../services/notificationService';
 
 const SocketContext = createContext(null);
 const MAX_NOTIFICATIONS = 50;
 
 const buildNotificationId = (type, data) => {
   const key =
+    data._id ||
     data.requestId ||
     data.action ||
     data.targetUserId ||
@@ -25,26 +32,27 @@ const buildNotificationId = (type, data) => {
 
 const buildNotification = (type, data) => {
   const createdAt = data.createdAt || new Date().toISOString();
+  const meta = data.metadata || {};
 
   return {
-    id: buildNotificationId(type, data),
-    type,
-    read: false,
+    id: data._id || buildNotificationId(type, data),
+    type: data.type || type,
+    read: data.read ?? false,
     createdAt,
-    requestId: data.requestId,
-    requesterId: data.requesterId,
-    requesterName: data.requesterName,
-    donorId: data.donorId,
-    donorName: data.donorName,
-    status: data.status,
-    bloodGroup: data.bloodGroup,
-    message: data.message,
-    emergency: data.emergency,
-    action: data.action,
-    targetUserId: data.targetUserId,
+    requestId: data.requestId || meta.requestId,
+    requesterId: data.requesterId || meta.requesterId,
+    requesterName: data.requesterName || meta.requesterName,
+    donorId: data.donorId || meta.donorId,
+    donorName: data.donorName || meta.donorName,
+    status: data.status || meta.status,
+    bloodGroup: data.bloodGroup || meta.bloodGroup,
+    message: data.message || meta.message,
+    emergency: data.emergency || meta.emergency,
+    action: data.action || meta.action,
+    targetUserId: data.targetUserId || meta.targetUserId,
     title: data.title,
-    body: data.body,
-    request: data.request,
+    body: data.body || data.message || meta.message,
+    request: data.request || meta.request,
   };
 };
 
@@ -93,6 +101,7 @@ export const SocketProvider = ({ children }) => {
   const [connected, setConnected] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const userRef = useRef(user);
   const seenNotificationIdsRef = useRef(new Set());
@@ -103,12 +112,38 @@ export const SocketProvider = ({ children }) => {
     userRef.current = user;
   }, [user]);
 
+  const fetchDBNotifications = useCallback(async () => {
+    try {
+      const { data } = await getNotifications();
+      const list = (data.notifications || []).map((item) => {
+        const enriched = buildNotification(item.type, item);
+        return {
+          ...enriched,
+          ...getNotificationCopy(enriched),
+        };
+      });
+
+      seenNotificationIdsRef.current.clear();
+      list.forEach((n) => seenNotificationIdsRef.current.add(n.id));
+
+      setNotifications(list);
+
+      const { data: countRes } = await getUnreadCount();
+      setUnreadCount(countRes.count || 0);
+    } catch (err) {
+      console.error('Failed to fetch persistent notifications:', err);
+    }
+  }, []);
+
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (isAuthenticated) {
+      fetchDBNotifications();
+    } else {
       seenNotificationIdsRef.current.clear();
       setNotifications([]);
+      setUnreadCount(0);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, fetchDBNotifications]);
 
   const pushNotification = useCallback((notification) => {
     if (seenNotificationIdsRef.current.has(notification.id)) {
@@ -122,6 +157,7 @@ export const SocketProvider = ({ children }) => {
     };
 
     setNotifications((prev) => [enriched, ...prev].slice(0, MAX_NOTIFICATIONS));
+    setUnreadCount((c) => c + 1);
     return true;
   }, []);
 
@@ -155,31 +191,38 @@ export const SocketProvider = ({ children }) => {
     });
   }, []);
 
-  const markAllRead = useCallback(() => {
-    setNotifications((prev) => {
-      const hasUnread = prev.some((n) => !n.read);
-      if (!hasUnread) return prev;
-      return prev.map((n) => ({ ...n, read: true }));
-    });
+  const markAllRead = useCallback(async () => {
+    try {
+      setNotifications((prev) => {
+        const hasUnread = prev.some((n) => !n.read);
+        if (!hasUnread) return prev;
+        return prev.map((n) => ({ ...n, read: true }));
+      });
+      setUnreadCount(0);
+      await markAllReadAPI();
+    } catch (err) {
+      console.error('Failed to mark all read:', err);
+    }
   }, []);
 
-  const markAsRead = useCallback((id) => {
-    setNotifications((prev) => {
-      const target = prev.find((n) => n.id === id);
-      if (!target || target.read) return prev;
-      return prev.map((n) => (n.id === id ? { ...n, read: true } : n));
-    });
+  const markAsRead = useCallback(async (id) => {
+    try {
+      setNotifications((prev) => {
+        const target = prev.find((n) => n.id === id);
+        if (!target || target.read) return prev;
+        return prev.map((n) => (n.id === id ? { ...n, read: true } : n));
+      });
+      setUnreadCount((c) => Math.max(0, c - 1));
+      await markReadAPI(id);
+    } catch (err) {
+      console.error('Failed to mark read:', err);
+    }
   }, []);
 
   const clearNotifications = useCallback(() => {
     seenNotificationIdsRef.current.clear();
     setNotifications([]);
   }, []);
-
-  const unreadCount = useMemo(
-    () => notifications.filter((n) => !n.read).length,
-    [notifications]
-  );
 
   useEffect(() => {
     if (loading || !isAuthenticated || !user) {
